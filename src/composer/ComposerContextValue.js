@@ -1,4 +1,5 @@
 import React, { createContext } from 'react';
+import { useStore } from 'zustand';
 
 /**
  * ComposerContext - The context object
@@ -19,10 +20,10 @@ export const ComposerContext = createContext(null);
  * This hook is used by any descendant component in the tree,
  * demonstrating that state access is not limited to immediate children.
  */
-export function useComposer() {
-  const context = React.useContext(ComposerContext);
-  if (!context) {
+export function useComposer(selector) {
+  const store = React.useContext(ComposerContext);
+  if (!store) {
     throw new Error('useComposer must be used within ComposerProvider');
   }
-  return context;
+  return useStore(store, selector);
 }

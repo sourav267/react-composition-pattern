@@ -1,97 +1,60 @@
-import React, { useState, useCallback } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ComposerContext } from './ComposerContextValue';
+import { createComposerStore } from './composerStore';
 
 /**
  * ComposerProvider - The core composition building block
- * 
- * This provider manages:
- * - Text content state
- * - Attachments
- * - Custom metadata (thread context, editing mode, etc.)
- * - Actions and handlers
- * 
- * All lifted to the highest level to avoid prop drilling throughout the tree.
+ *
+ * This provider returns a Zustand store instance via context.
+ * Consumers should use the `useComposer` hook to access state.
  */
 export function ComposerProvider({
   children,
   onSubmit,
   initialValue = '',
-  useStateFn = useState, // Allow for custom state hooks (global state, etc.)
 }) {
-  // State is lifted here - child components access it through context
-  const [content, setContent] = useStateFn(initialValue);
-  const [attachments, setAttachments] = useStateFn([]);
-  const [metadata, setMetadata] = useStateFn({});
-  const [isSubmitting, setIsSubmitting] = useStateFn(false);
+  // Create store once per component instance
+  const storeRef = useRef(null);
+  if (!storeRef.current) {
+    storeRef.current = createComposerStore(initialValue);
+  }
+  const store = storeRef.current;
 
-  // Actions - provided to all descendants without prop drilling
-  const updateContent = useCallback((value) => {
-    setContent(value);
-  }, [setContent]);
-
-  const addAttachment = useCallback((attachment) => {
-    setAttachments((prev) => [...prev, attachment]);
-  }, [setAttachments]);
-
-  const removeAttachment = useCallback((attachmentId) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
-  }, [setAttachments]);
-
-  const updateMetadata = useCallback((key, value) => {
-    setMetadata((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  }, [setMetadata]);
-
-  const submit = useCallback(
-    async (additionalData = {}) => {
+  // Sync the submit action with the latest onSubmit prop
+  useEffect(() => {
+    const wrappedSubmit = async (additionalData = {}) => {
       try {
-        setIsSubmitting(true);
+        store.setState({ isSubmitting: true });
+
+        // Get snapshot for submission
+        const { content, attachments, metadata, reset } = store.getState();
+
         await onSubmit({
           content,
           attachments,
           metadata,
           ...additionalData,
         });
+
         // Reset after successful submission
-        setContent('');
-        setAttachments([]);
-        setMetadata({});
+        reset();
       } catch (error) {
         console.error('Submission failed:', error);
       } finally {
-        setIsSubmitting(false);
+        store.setState({ isSubmitting: false });
       }
-    },
-    [content, attachments, metadata, onSubmit, setContent, setAttachments, setMetadata, setIsSubmitting]
-  );
+    };
 
-  const reset = useCallback(() => {
-    setContent('');
-    setAttachments([]);
-    setMetadata({});
-  }, [setContent, setAttachments, setMetadata]);
+    store.setState({ submit: wrappedSubmit });
+  }, [onSubmit, store]); // Re-create wrappedSubmit if onSubmit changes
 
-  // Context value - this is the interface contract
-  const value = {
-    // State
-    content,
-    attachments,
-    metadata,
-    isSubmitting,
-    
-    // Actions
-    updateContent,
-    addAttachment,
-    removeAttachment,
-    updateMetadata,
-    submit,
-    reset,
-  };
+  // Debug: Sync initialValue if it changes? 
+  // Usually initialValue is only for initialization, but some patterns might want updates.
+  // The original didn't sync initialValue updates to 'content' state after mount (it was passed to useState(initialValue)).
+  // So we don't need to sync it here either.
 
   return (
-    <ComposerContext.Provider value={value}>
+    <ComposerContext.Provider value={store}>
       {children}
     </ComposerContext.Provider>
   );
